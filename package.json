@@ -1,0 +1,15 @@
+{
+  "name": "second-life-platform",
+  "version": "1.0.0",
+  "description": "SECOND LIFE — Verified Student Experience Platform (From Schoolwork to Real-World Experience)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.ts",
+    "dev": "node --watch src/server.ts",
+    "test": "node --test tests/e2e-workflow.test.ts"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  }
+}

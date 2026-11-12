@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Local SQLite database & WAL files
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+data/*.db
+
+# Environment & secrets
+.env
+.env.local
+
+# Logs & OS files
+*.log
+.DS_Store
+Thumbs.db
