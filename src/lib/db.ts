@@ -2,13 +2,59 @@
 // SECOND LIFE — Relational Database Layer (SQLite / PostgreSQL Compatible)
 // ============================================================================
 
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { EMBEDDED_SCHEMA_SQL } from './schema-sql.ts';
 
 let dbInstance: DatabaseSync | null = null;
 let demoModeActive = false;
+
+export function getProjectRoot(): string {
+  try {
+    if (typeof import.meta?.dirname === 'string' && import.meta.dirname.length > 0) {
+      return path.resolve(import.meta.dirname, '..', '..');
+    }
+  } catch {
+    // Fallback to process.cwd() in bundled serverless environments
+  }
+  return process.cwd();
+}
+
+export function isServerlessRuntime(): boolean {
+  return Boolean(
+    process.env.VERCEL ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.NETLIFY ||
+      process.cwd().startsWith('/var/task')
+  );
+}
+
+export function getUploadStorageDir(): string {
+  if (isServerlessRuntime()) {
+    const tmpStorage = path.join(os.tmpdir(), 'second_life_uploads');
+    if (!fs.existsSync(tmpStorage)) {
+      fs.mkdirSync(tmpStorage, { recursive: true });
+    }
+    return tmpStorage;
+  }
+  const projectRoot = getProjectRoot();
+  const localStorage = path.join(projectRoot, 'data', 'private_uploads');
+  try {
+    if (!fs.existsSync(localStorage)) {
+      fs.mkdirSync(localStorage, { recursive: true });
+    }
+    return localStorage;
+  } catch {
+    const tmpStorage = path.join(os.tmpdir(), 'second_life_uploads');
+    if (!fs.existsSync(tmpStorage)) {
+      fs.mkdirSync(tmpStorage, { recursive: true });
+    }
+    return tmpStorage;
+  }
+}
 
 export function isDemoMode(): boolean {
   return demoModeActive;
@@ -35,33 +81,54 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 export function getDb(): DatabaseSync {
   if (dbInstance) return dbInstance;
 
-  const projectRoot = path.resolve(import.meta.dirname, '..', '..');
+  const projectRoot = getProjectRoot();
   const rawEnvPath = process.env.SQLITE_DB_PATH?.trim();
-  const dbPath =
-    rawEnvPath === ':memory:'
-      ? ':memory:'
-      : rawEnvPath
-      ? path.resolve(projectRoot, rawEnvPath)
-      : path.join(projectRoot, 'data', 'second_life.sqlite');
+  let dbPath: string;
+
+  if (rawEnvPath === ':memory:') {
+    dbPath = ':memory:';
+  } else if (isServerlessRuntime()) {
+    dbPath = path.join(os.tmpdir(), 'second_life.sqlite');
+  } else if (rawEnvPath) {
+    dbPath = path.resolve(projectRoot, rawEnvPath);
+  } else {
+    dbPath = path.join(projectRoot, 'data', 'second_life.sqlite');
+  }
 
   if (dbPath !== ':memory:') {
     const dir = path.dirname(dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch {
+      dbPath = path.join(os.tmpdir(), 'second_life.sqlite');
     }
   }
 
-  const storageDir = path.join(projectRoot, 'data', 'private_uploads');
-  if (!fs.existsSync(storageDir)) {
-    fs.mkdirSync(storageDir, { recursive: true });
+  getUploadStorageDir();
+
+  const sqliteBuiltin = (process as any).getBuiltinModule?.('node:sqlite');
+  if (!sqliteBuiltin || !sqliteBuiltin.DatabaseSync) {
+    throw new Error(
+      `Node.js built-in 'node:sqlite' requires Node.js 22.x (current runtime: ${process.version}). In Vercel, set Project Settings -> General -> Node.js Version to 22.x.`
+    );
   }
 
-  dbInstance = new DatabaseSync(dbPath);
+  dbInstance = new sqliteBuiltin.DatabaseSync(dbPath) as DatabaseSync;
   dbInstance.exec('PRAGMA foreign_keys = ON;');
-  dbInstance.exec('PRAGMA journal_mode = WAL;');
+  try {
+    dbInstance.exec('PRAGMA journal_mode = WAL;');
+  } catch {
+    // Ignore WAL mode error on filesystems that do not support shared memory
+  }
 
-  const schemaPath = path.join(projectRoot, 'database', 'schema.sqlite.sql');
-  const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
+  const candidatePaths = [
+    path.join(projectRoot, 'database', 'schema.sqlite.sql'),
+    path.join(process.cwd(), 'database', 'schema.sqlite.sql')
+  ];
+  const schemaPath = candidatePaths.find((p) => fs.existsSync(p));
+  const schemaSql = schemaPath ? fs.readFileSync(schemaPath, 'utf-8') : EMBEDDED_SCHEMA_SQL;
   dbInstance.exec(schemaSql);
 
   seedCoreRolesAndBootstrapAdmin(dbInstance);

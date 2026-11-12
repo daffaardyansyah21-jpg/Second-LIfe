@@ -5,11 +5,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node scripts/build-vercel.mjs",
     "start": "node src/server.ts",
     "dev": "node --watch src/server.ts",
     "test": "node --test tests/e2e-workflow.test.ts"
   },
   "engines": {
-    "node": ">=22.6.0"
+    "node": "22.x"
   }
 }

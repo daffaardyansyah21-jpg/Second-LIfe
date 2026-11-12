@@ -9,6 +9,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   clearLabeledDemoData,
   getDb,
+  getUploadStorageDir,
   hashPassword,
   isDemoMode,
   seedLabeledDemoData,
@@ -152,11 +153,7 @@ function validateAndStoreFile(
     throw new Error('File exceeds the 25MB maximum upload limit.');
   }
 
-  const projectRoot = path.resolve(import.meta.dirname, '..', '..');
-  const storageDir = path.join(projectRoot, 'data', 'private_uploads');
-  if (!fs.existsSync(storageDir)) {
-    fs.mkdirSync(storageDir, { recursive: true });
-  }
+  const storageDir = getUploadStorageDir();
 
   const safeKey = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_')}`;
   const fullPath = path.join(storageDir, safeKey);

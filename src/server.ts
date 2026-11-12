@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getDb } from './lib/db.ts';
+import { getDb, getProjectRoot } from './lib/db.ts';
 import { getSessionUser, requireRole } from './lib/auth.ts';
 import { handleApiRoute } from './routes/api.ts';
 import {
@@ -99,8 +99,12 @@ export async function requestHandler(req: IncomingMessage, res: ServerResponse):
 
     // 0. Static Image Assets (/assets/*)
     if (pathname === '/assets/hero-students.jpg') {
-      const imgPath = path.resolve(import.meta.dirname, '..', 'public', 'hero-students.jpg');
-      if (fs.existsSync(imgPath)) {
+      const candidateImgPaths = [
+        path.join(getProjectRoot(), 'public', 'hero-students.jpg'),
+        path.join(process.cwd(), 'public', 'hero-students.jpg')
+      ];
+      const imgPath = candidateImgPaths.find((p) => fs.existsSync(p));
+      if (imgPath) {
         const buf = fs.readFileSync(imgPath);
         res.writeHead(200, {
           'Content-Type': 'image/jpeg',
@@ -450,7 +454,13 @@ export function createAppServer(): http.Server {
   });
 }
 
-if (!process.argv.some((a) => a.includes('e2e-workflow.test'))) {
+export default requestHandler;
+
+if (
+  !process.env.VERCEL &&
+  !process.env.AWS_LAMBDA_FUNCTION_NAME &&
+  !process.argv.some((a) => a.includes('e2e-workflow.test'))
+) {
   const port = Number(process.env.PORT || 3000);
   const server = createAppServer();
   server.listen(port, () => {
